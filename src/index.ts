@@ -108,22 +108,23 @@ export const injectAsIndexedJest = <T extends JestLike>(jest: T, options?: Index
     if (env && NODE_ENV !== env) {
       return;
     }
+    console.log('appending block', blockFn.name);
     blockFn();
   };
 
   const createDescribe = <DescKey extends 'describe' | 'xdescribe' | 'fdescribe'>(key: DescKey) => {
-    const fn = Reflect.get(jest, key);
-    expectFunc(fn, key, 2);
+    const oldDescribe = Reflect.get(jest, key);
+    expectFunc(oldDescribe, key, 2);
 
     const describe: T[typeof key] = function (name: BlockNameLike, fn: BlockFn) {
+      const i = level;
       level++;
       if (level < blockIndexes.length) {
         blockIndexes.splice(level);
       }
-      blockIndexes[level - 1] =
-        blockIndexes[level - 1] === undefined ? 1 : blockIndexes[level - 1] + 1;
+      blockIndexes[i] = i in blockIndexes ? blockIndexes[i] + 1 : 1;
       currentItIndex = 0;
-      fn(blockNameFormat(name), fn);
+      oldDescribe(blockNameFormat(name), fn);
       currentItIndex = 0;
       level--;
     } as T[typeof key];
@@ -145,8 +146,13 @@ export const injectAsIndexedJest = <T extends JestLike>(jest: T, options?: Index
     let localIndex = 0;
     Reflect.set(it, 'each', (table: readonly Record<string, unknown>[]) => {
       const itEach = originEach(table) as any;
-      return (name: string, ...args: any[]) => {
-        return itEach(itNameFormat(name, localIndex), ...args);
+      return (name: string, eachFn: Function) => {
+        const newEachFn = (...args: any[]) => {
+          currentItIndex++;
+          totalIndex++;
+          return eachFn(...args);
+        };
+        return itEach(itNameFormat(name, localIndex), newEachFn);
       };
     });
 

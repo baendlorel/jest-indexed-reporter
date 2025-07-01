@@ -3,7 +3,6 @@ import { injectAsIndexedJest } from '@/index';
 
 const { underEnv, it, describe, expect } = injectAsIndexedJest<typeof jest>(jest);
 
-// fixme 不知道为啥只剩下3个测试了： should run a b c
 underEnv('test', () => {
   describe('header', () => {
     describe('first test', () => {
@@ -18,6 +17,12 @@ underEnv('test', () => {
       describe('second sub test', () => {
         it('should run c test', () => {
           expect('r').not.toBe(3);
+        });
+
+        it.each([2, 3])('iteach', (arg, done) => {
+          expect(arg).toBeGreaterThan(1);
+          // fixme done不是函数？
+          done();
         });
       });
     });
