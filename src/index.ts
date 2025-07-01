@@ -10,8 +10,29 @@ interface JestLike {
   [key: string]: any; // 允许其他属性
 }
 
+interface FormatterParam {
+  level: number;
+  currentItIndex: number;
+  totalIndex: number;
+  localIndex?: number;
+  blockIndexes: number[];
+  name: string;
+}
+
 interface IndexedOptions {
-  totalIndexFormat?: (index: number) => string;
+  /**
+   * This formats the name of `describe` blocks.
+   * @param data a FormatterParam object
+   * @returns formatted name, will be used as `blockName` param
+   */
+  blockNameFormatter?: (data: FormatterParam) => string;
+
+  /**
+   * This formats the name of `it` tests.
+   * @param data a FormatterParam object
+   * @returns formatted name, will be used as `testName` param
+   */
+  testNameFormatter?: (data: FormatterParam) => string;
 }
 
 /**
@@ -19,7 +40,7 @@ interface IndexedOptions {
  * @param jest
  * @returns
  */
-export const createIndexedJest = <T extends JestLike>(jest: T, options?: IndexedOptions) => {
+export const injectAsIndexedJest = <T extends JestLike>(jest: T, options?: IndexedOptions) => {
   type TestNameLike = Parameters<T['it']>[0];
   type TestFn = Parameters<T['it']>[1];
 
@@ -29,43 +50,60 @@ export const createIndexedJest = <T extends JestLike>(jest: T, options?: Indexed
   const NODE_ENV = process.env.NODE_ENV;
   console.info(`process.env.NODE_ENV: ${NODE_ENV}`);
 
-  const { totalIndexFormat = (i: number) => `(${i})` } = Object(options);
+  const {
+    blockNameFormatter = (data) => `${data.blockIndexes.join('.')} ${data.name}`,
+    testNameFormatter = (data) =>
+      `${currentItIndex.toString().padStart(3, ' ')}. ${data.name} ${data.totalIndex}`,
+  } = Object(options) as IndexedOptions;
 
+  // # vars
   let level = 0;
-  let curIdx = 0;
-  let maxCurIdx = 0;
-  let totalIdx = 0;
-  const h: number[] = [];
-  const hcollapse = () => {
-    return '\u0008'.repeat((h.length - 1) * 2).concat(h.join('.'));
+  let currentItIndex = 0;
+  let totalIndex = 0;
+  const blockIndexes: number[] = [];
+
+  // # formatters
+  const itNameFormat = (name: string, localIndex?: number) =>
+    testNameFormatter({
+      level,
+      currentItIndex,
+      totalIndex,
+      blockIndexes: blockIndexes.slice(),
+      name,
+      localIndex,
+    });
+
+  const blockNameFormat = (name: string) =>
+    blockNameFormatter({
+      level,
+      currentItIndex,
+      totalIndex,
+      blockIndexes: blockIndexes.slice(),
+      name,
+    });
+
+  // # utils
+  const err = (msg: string) => {
+    const m = `Please "import * as jest from '@jest/globals'" then "const { it, ... } = createIndexedJest(jest)".`;
+    new TypeError(`${msg}. ${m}`);
   };
 
-  const itStack: {}[] = [];
-
-  const leftAlign = (n: number) => `${String(n).padStart(String(maxCurIdx).length, ' ')}`;
-
-  const err = (msg: string) => {
-    msg = msg.replace(/([.]$|$)/g, '');
-    return new TypeError(
-      `${msg}. Please use import * as jest from '@jest/globals' then use createIndexedJest(jest).`
-    );
+  const expectFunc: (fn: any, key: string, minLen: number) => asserts fn is Function = (
+    f: any,
+    k: string,
+    m: number
+  ) => {
+    if (typeof f !== 'function') {
+      throw err(`'jest.${k}' is not a function`);
+    }
+    if (f.length < m) {
+      throw err(`'jest.${k}' should have at least ${m} params. Got ${f.length}`);
+    }
   };
 
   /**
    * Depends on `jest.it` can accept funtions and classes as the `testName` parameter.
    */
-  const indexer = (msg: string) =>
-    new Proxy(indexer, {
-      get(target, prop) {
-        if (['name', 'toString', Symbol.toPrimitive].includes(prop)) {
-          console.log('curIdx', curIdx);
-          return `${leftAlign(curIdx)}. ${msg} ${totalIndexFormat(totalIdx)}`;
-        }
-        console.log('Reading? prop:', prop);
-        return Reflect.get(target, prop);
-      },
-    });
-
   const underEnv = (env: 'dev' | 'prod' | 'test' | string, blockFn: BlockFn) => {
     if (env && NODE_ENV !== env) {
       return;
@@ -74,61 +112,42 @@ export const createIndexedJest = <T extends JestLike>(jest: T, options?: Indexed
   };
 
   const createDescribe = <DescKey extends 'describe' | 'xdescribe' | 'fdescribe'>(key: DescKey) => {
-    const origin = Reflect.get(jest, key);
-    if (typeof origin !== 'function') {
-      throw err(`Jest should have a method named '${key}'`);
-    }
-    if (origin.length < 2) {
-      throw err(`Jest's '${key}' method should have at least 2 parameters: (testName, testFn)`);
-    }
+    const fn = Reflect.get(jest, key);
+    expectFunc(fn, key, 2);
 
-    const describe: T[typeof key] = function (blockName: BlockNameLike, blockFn: BlockFn) {
+    const describe: T[typeof key] = function (name: BlockNameLike, fn: BlockFn) {
       level++;
-      if (level < h.length) {
-        h.splice(level);
+      if (level < blockIndexes.length) {
+        blockIndexes.splice(level);
       }
-      h[level - 1] = h[level - 1] === undefined ? 1 : h[level - 1] + 1;
-      curIdx = 0;
-      origin(`${hcollapse()} ${blockName}`, blockFn);
-      curIdx = 0;
+      blockIndexes[level - 1] =
+        blockIndexes[level - 1] === undefined ? 1 : blockIndexes[level - 1] + 1;
+      currentItIndex = 0;
+      fn(blockNameFormat(name), fn);
+      currentItIndex = 0;
       level--;
     } as T[typeof key];
     return describe;
   };
 
   const createIt = <ItKey extends 'it' | 'test' | 'fit' | 'xit' | 'xtest'>(key: ItKey) => {
-    const origin = Reflect.get(jest, key);
-    if (typeof origin !== 'function') {
-      throw err(`Jest should have a method named '${key}'`);
-    }
-    if (origin.length < 2) {
-      throw err(
-        `Jest '${key}' should have at least 2 params: (testName, fn). Got ${origin.length}`
-      );
-    }
+    const originIt = Reflect.get(jest, key);
+    expectFunc(originIt, key, 2);
+    const originEach = Reflect.get(originIt, 'each');
+    expectFunc(originEach, key, 1);
 
-    console.log('origin', origin, origin.name, origin.length);
-
-    const originEach = Reflect.get(origin, 'each');
-    if (typeof originEach !== 'function') {
-      throw err(`Jest should have a method named '${key}'.each`);
-    }
-    if (originEach.length < 1) {
-      throw err(
-        `Jest '${key}'.each should have at least 1 param: (arrayLike). Got ${originEach.length}`
-      );
-    }
-
-    const it: T[typeof key] = function (testName: TestNameLike, fn: TestFn, timeout?: number) {
-      curIdx++;
-      totalIdx++;
-      maxCurIdx = Math.max(maxCurIdx, curIdx);
-      origin(indexer(testName), fn, timeout);
+    const it: T[typeof key] = function (name: TestNameLike, fn: TestFn, timeout?: number) {
+      currentItIndex++;
+      totalIndex++;
+      originIt(itNameFormat(name), fn, timeout);
     } as T[typeof key];
 
-    Reflect.set(it, 'each', (...args: any[]) => {
-      const [testName, fn] = args.splice(0, 2);
-      originEach(indexer(testName), fn, ...args);
+    let localIndex = 0;
+    Reflect.set(it, 'each', (table: readonly Record<string, unknown>[]) => {
+      const itEach = originEach(table) as any;
+      return (name: string, ...args: any[]) => {
+        return itEach(itNameFormat(name, localIndex), ...args);
+      };
     });
 
     return it;

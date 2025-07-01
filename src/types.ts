@@ -1,3 +1,5 @@
 import * as jest from '@jest/globals';
 
-jest.it.each;
+const itt = jest.it.each([2]);
+itt()
+jest.describe;

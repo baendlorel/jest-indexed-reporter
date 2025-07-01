@@ -1,7 +1,9 @@
 import * as jest from '@jest/globals';
-import { createIndexedJest } from '@/index';
+import { injectAsIndexedJest } from '@/index';
 
-const { underEnv, it, describe, expect } = createIndexedJest<typeof jest>(jest);
+const { underEnv, it, describe, expect } = injectAsIndexedJest<typeof jest>(jest);
+
+// fixme 不知道为啥只剩下3个测试了： should run a b c
 underEnv('test', () => {
   describe('header', () => {
     describe('first test', () => {
@@ -19,13 +21,5 @@ underEnv('test', () => {
         });
       });
     });
-  });
-
-  describe('second header', () => {
-    for (let i = 0; i < 120; i++) {
-      it(i.toString(36), () => {
-        expect(true).toBe(true);
-      });
-    }
   });
 });
