@@ -1,7 +1,6 @@
-import * as jest from '@jest/globals';
 import { injectAsIndexedJest } from '@/index';
 
-const { underEnv, it, describe, expect } = injectAsIndexedJest<typeof jest>(jest);
+const { underEnv, it, describe, expect } = injectAsIndexedJest();
 
 underEnv('test', () => {
   describe('header', () => {

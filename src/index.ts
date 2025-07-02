@@ -1,10 +1,17 @@
+import * as jest from '@jest/globals';
+type JestLike = typeof jest;
+
+interface ItLike {
+  (...args: any[]): any;
+  each: (...args: any[]) => any;
+}
 interface JestLike {
-  it: (...args: any[]) => any;
+  it: ItLike;
+  test: ItLike;
+  fit: ItLike;
+  xit: ItLike;
+  xtest: ItLike;
   describe: (...args: any[]) => any;
-  test: (...args: any[]) => any;
-  fit: (...args: any[]) => any;
-  xit: (...args: any[]) => any;
-  xtest: (...args: any[]) => any;
   xdescribe: (...args: any[]) => any;
   fdescribe: (...args: any[]) => any;
   [key: string]: any; // 允许其他属性
@@ -16,7 +23,7 @@ interface FormatterParam {
   totalIndex: number;
   localIndex?: number;
   blockIndexes: number[];
-  name: string;
+  name: BlockNameLike | TestNameLike;
 }
 
 interface IndexedOptions {
@@ -40,12 +47,18 @@ interface IndexedOptions {
  * @param jest
  * @returns
  */
-export const injectAsIndexedJest = <T extends JestLike>(jest: T, options?: IndexedOptions) => {
-  type TestNameLike = Parameters<T['it']>[0];
-  type TestFn = Parameters<T['it']>[1];
+export const injectAsIndexedJest = (options?: IndexedOptions) => {
+  if (!jest) {
+    throw new ReferenceError(
+      "Jest not found. Please ensure '@jest/globals' is valid to require('@jest/globals')."
+    );
+  }
 
-  type BlockNameLike = Parameters<T['describe']>[0];
-  type BlockFn = Parameters<T['describe']>[1];
+  type TestNameLike = Parameters<JestLike['it']>[0];
+  type TestFn = Parameters<JestLike['it']>[1];
+
+  type BlockNameLike = Parameters<JestLike['describe']>[0];
+  type BlockFn = Parameters<JestLike['describe']>[1];
 
   const NODE_ENV = process.env.NODE_ENV;
   console.info(`process.env.NODE_ENV: ${NODE_ENV}`);
@@ -128,7 +141,7 @@ export const injectAsIndexedJest = <T extends JestLike>(jest: T, options?: Index
       currentItIndex = 0;
       level--;
     };
-    return describe as T[typeof key];
+    return describe as JestLike[typeof key];
   };
 
   const createIt = <ItKey extends 'it' | 'test' | 'fit' | 'xit' | 'xtest'>(key: ItKey) => {
@@ -141,7 +154,7 @@ export const injectAsIndexedJest = <T extends JestLike>(jest: T, options?: Index
       currentItIndex++;
       totalIndex++;
       originIt(itNameFormat(name), fn, timeout);
-    } as T[typeof key];
+    } as JestLike[typeof key];
 
     let localIndex = 0;
     Reflect.set(it, 'each', (table: readonly Record<string, unknown>[]) => {
@@ -174,7 +187,7 @@ export const injectAsIndexedJest = <T extends JestLike>(jest: T, options?: Index
       return newEached;
     });
 
-    return it as T[typeof key];
+    return it as JestLike[typeof key];
   };
 
   return {
@@ -185,7 +198,7 @@ export const injectAsIndexedJest = <T extends JestLike>(jest: T, options?: Index
      * @param blockFn The function containing the block of tests.
      */
     underEnv,
-    expect: jest.expect as T['expect'],
+    expect: jest.expect as JestLike['expect'],
     describe: createDescribe('describe'),
     xdescribe: createDescribe('xdescribe'),
     fdescribe: createDescribe('fdescribe'),
