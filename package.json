@@ -29,6 +29,9 @@
 		"lint": "eslint .",
 		"build": "rm -rf dist && rollup -c"
 	},
+	"peerDependencies": {
+		"jest": "^30.0.0"
+	},
 	"devDependencies": {
 		"@babel/cli": "^7.27.2",
 		"@babel/core": "^7.27.7",

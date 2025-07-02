@@ -116,7 +116,7 @@ export const injectAsIndexedJest = <T extends JestLike>(jest: T, options?: Index
     const oldDescribe = Reflect.get(jest, key);
     expectFunc(oldDescribe, key, 2);
 
-    const describe: T[typeof key] = function (name: BlockNameLike, fn: BlockFn) {
+    const describe = function (name: BlockNameLike, fn: BlockFn) {
       const i = level;
       level++;
       if (level < blockIndexes.length) {
@@ -127,8 +127,8 @@ export const injectAsIndexedJest = <T extends JestLike>(jest: T, options?: Index
       oldDescribe(blockNameFormat(name), fn);
       currentItIndex = 0;
       level--;
-    } as T[typeof key];
-    return describe;
+    };
+    return describe as T[typeof key];
   };
 
   const createIt = <ItKey extends 'it' | 'test' | 'fit' | 'xit' | 'xtest'>(key: ItKey) => {
@@ -137,7 +137,7 @@ export const injectAsIndexedJest = <T extends JestLike>(jest: T, options?: Index
     const originEach = Reflect.get(originIt, 'each');
     expectFunc(originEach, key, 1);
 
-    const it: T[typeof key] = function (name: TestNameLike, fn: TestFn, timeout?: number) {
+    const it = function (name: TestNameLike, fn: TestFn, timeout?: number) {
       currentItIndex++;
       totalIndex++;
       originIt(itNameFormat(name), fn, timeout);
@@ -145,18 +145,36 @@ export const injectAsIndexedJest = <T extends JestLike>(jest: T, options?: Index
 
     let localIndex = 0;
     Reflect.set(it, 'each', (table: readonly Record<string, unknown>[]) => {
-      const itEach = originEach(table) as any;
-      return (name: string, eachFn: Function) => {
-        const newEachFn = (...args: any[]) => {
-          currentItIndex++;
-          totalIndex++;
-          return eachFn(...args);
-        };
-        return itEach(itNameFormat(name, localIndex), newEachFn);
+      const eached = originEach(table) as (
+        name: string,
+        fn: (arg: number, done: Function) => void | any,
+        timeout?: number
+      ) => void;
+
+      const newEached = (name: string, fn: Function, timeout?: number) => {
+        console.log('newEached', { name, fn: fn.toString(), timeout });
+
+        let newFn: any;
+        if (fn.length === 1) {
+          newFn = (arg: any) => {
+            currentItIndex++;
+            totalIndex++;
+            return fn(arg);
+          };
+        } else {
+          newFn = (arg: any, done: Function) => {
+            currentItIndex++;
+            totalIndex++;
+            return fn(arg, done);
+          };
+        }
+        return eached(itNameFormat(name, localIndex), newFn, timeout);
       };
+
+      return newEached;
     });
 
-    return it;
+    return it as T[typeof key];
   };
 
   return {

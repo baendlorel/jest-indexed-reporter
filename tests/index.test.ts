@@ -19,11 +19,26 @@ underEnv('test', () => {
           expect('r').not.toBe(3);
         });
 
-        it.each([2, 3])('iteach', (arg, done) => {
+        it.each([2, 3])('iteach', (arg) => {
+          // 同步测试，不需要 done
           expect(arg).toBeGreaterThan(1);
-          // fixme done不是函数？
+        });
+
+        // 如果需要异步测试，用这种方式：
+        it.each([5, 6])('async iteach', (arg, done) => {
+          expect(arg).toBeGreaterThan(1);
+          console.log('done', done);
           done();
         });
+
+        it('should run d1 test', () => {
+          expect('r').not.toBe(3);
+        });
+      });
+    });
+    describe('third test', () => {
+      it('should run da test', () => {
+        expect('r').not.toBe(3);
       });
     });
   });
