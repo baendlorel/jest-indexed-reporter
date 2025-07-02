@@ -1,38 +1,34 @@
 import * as jest from '@jest/globals';
-type JestLike = typeof jest;
+type Jest = typeof jest;
 
-interface ItLike {
-  (...args: any[]): any;
-  each: (...args: any[]) => any;
-}
-interface JestLike {
-  it: ItLike;
-  test: ItLike;
-  fit: ItLike;
-  xit: ItLike;
-  xtest: ItLike;
-  describe: (...args: any[]) => any;
-  xdescribe: (...args: any[]) => any;
-  fdescribe: (...args: any[]) => any;
-  [key: string]: any; // 允许其他属性
-}
+type TestNameLike = Parameters<Jest['it']>[0];
+type TestFn = Parameters<Jest['it']>[1];
+
+type BlockNameLike = Parameters<Jest['describe']>[0];
+type BlockFn = Parameters<Jest['describe']>[1];
+
+type ItEach = Jest['it']['each'];
 
 interface FormatterParam {
   level: number;
   currentItIndex: number;
   totalIndex: number;
-  localIndex?: number;
   blockIndexes: number[];
   name: BlockNameLike | TestNameLike;
 }
 
 interface IndexedOptions {
   /**
+   * Disable the 'process.env.NODE_ENV: test' output on console.
+   */
+  hideNodeEnv?: boolean;
+
+  /**
    * This formats the name of `describe` blocks.
    * @param data a FormatterParam object
    * @returns formatted name, will be used as `blockName` param
    */
-  blockNameFormatter?: (data: FormatterParam) => string;
+  describeNameFormatter?: (data: FormatterParam) => string;
 
   /**
    * This formats the name of `it` tests.
@@ -54,20 +50,17 @@ export const injectAsIndexedJest = (options?: IndexedOptions) => {
     );
   }
 
-  type TestNameLike = Parameters<JestLike['it']>[0];
-  type TestFn = Parameters<JestLike['it']>[1];
-
-  type BlockNameLike = Parameters<JestLike['describe']>[0];
-  type BlockFn = Parameters<JestLike['describe']>[1];
-
-  const NODE_ENV = process.env.NODE_ENV;
-  console.info(`process.env.NODE_ENV: ${NODE_ENV}`);
-
   const {
-    blockNameFormatter = (data) => `${data.blockIndexes.join('.')} ${data.name}`,
+    describeNameFormatter = (data) => `${data.blockIndexes.join('.')} ${data.name}`,
     testNameFormatter = (data) =>
       `${currentItIndex.toString().padStart(3, ' ')}. ${data.name} ${data.totalIndex}`,
+    hideNodeEnv = false,
   } = Object(options) as IndexedOptions;
+
+  const NODE_ENV = process.env.NODE_ENV;
+  if (!hideNodeEnv) {
+    console.info(`process.env.NODE_ENV: ${NODE_ENV}`);
+  }
 
   // # vars
   let level = 0;
@@ -76,18 +69,31 @@ export const injectAsIndexedJest = (options?: IndexedOptions) => {
   const blockIndexes: number[] = [];
 
   // # formatters
-  const itNameFormat = (name: string, localIndex?: number) =>
+  /**
+   * Formats the block name with the current level and index.
+   * @param name The name of the block.
+   * @returns The formatted block name.
+   */
+  const descNameFmt = (name: BlockNameLike) =>
+    describeNameFormatter({
+      level,
+      currentItIndex,
+      totalIndex,
+      blockIndexes: blockIndexes.slice(),
+      name,
+    });
+
+  const itNameFmt = (name: TestNameLike) =>
     testNameFormatter({
       level,
       currentItIndex,
       totalIndex,
       blockIndexes: blockIndexes.slice(),
       name,
-      localIndex,
     });
 
-  const blockNameFormat = (name: string) =>
-    blockNameFormatter({
+  const itEachNameFmt = (name: TestNameLike) =>
+    testNameFormatter({
       level,
       currentItIndex,
       totalIndex,
@@ -121,7 +127,6 @@ export const injectAsIndexedJest = (options?: IndexedOptions) => {
     if (env && NODE_ENV !== env) {
       return;
     }
-    console.log('appending block', blockFn.name);
     blockFn();
   };
 
@@ -137,11 +142,11 @@ export const injectAsIndexedJest = (options?: IndexedOptions) => {
       }
       blockIndexes[i] = i in blockIndexes ? blockIndexes[i] + 1 : 1;
       currentItIndex = 0;
-      oldDescribe(blockNameFormat(name), fn);
+      oldDescribe(descNameFmt(name), fn);
       currentItIndex = 0;
       level--;
     };
-    return describe as JestLike[typeof key];
+    return describe as Jest[typeof key];
   };
 
   const createIt = <ItKey extends 'it' | 'test' | 'fit' | 'xit' | 'xtest'>(key: ItKey) => {
@@ -153,20 +158,16 @@ export const injectAsIndexedJest = (options?: IndexedOptions) => {
     const it = function (name: TestNameLike, fn: TestFn, timeout?: number) {
       currentItIndex++;
       totalIndex++;
-      originIt(itNameFormat(name), fn, timeout);
-    } as JestLike[typeof key];
+      originIt(itNameFmt(name), fn, timeout);
+    } as Jest[typeof key];
 
-    let localIndex = 0;
+    let itEachIndex = 0;
     Reflect.set(it, 'each', (table: readonly Record<string, unknown>[]) => {
-      const eached = originEach(table) as (
-        name: string,
-        fn: (arg: number, done: Function) => void | any,
-        timeout?: number
-      ) => void;
+      const eached = originEach(table);
 
+      // 注册的时候名字就已经确定好了
+      // 需要在注册的时候就搞定所有名字的index，把curindex也加好
       const newEached = (name: string, fn: Function, timeout?: number) => {
-        console.log('newEached', { name, fn: fn.toString(), timeout });
-
         let newFn: any;
         if (fn.length === 1) {
           newFn = (arg: any) => {
@@ -181,13 +182,13 @@ export const injectAsIndexedJest = (options?: IndexedOptions) => {
             return fn(arg, done);
           };
         }
-        return eached(itNameFormat(name, localIndex), newFn, timeout);
+        return eached(itNameFmt(name), newFn, timeout);
       };
 
       return newEached;
     });
 
-    return it as JestLike[typeof key];
+    return it as Jest[typeof key];
   };
 
   return {
@@ -198,7 +199,7 @@ export const injectAsIndexedJest = (options?: IndexedOptions) => {
      * @param blockFn The function containing the block of tests.
      */
     underEnv,
-    expect: jest.expect as JestLike['expect'],
+    expect: jest.expect as Jest['expect'],
     describe: createDescribe('describe'),
     xdescribe: createDescribe('xdescribe'),
     fdescribe: createDescribe('fdescribe'),
