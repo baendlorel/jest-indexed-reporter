@@ -35,7 +35,7 @@ underEnv('test', () => {
       });
     });
     describe('third test', () => {
-      it('should run da test', () => {
+      it('should be the last and total increased', () => {
         expect('r').not.toBe(3);
       });
     });

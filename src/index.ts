@@ -7,8 +7,6 @@ type TestFn = Parameters<Jest['it']>[1];
 type BlockNameLike = Parameters<Jest['describe']>[0];
 type BlockFn = Parameters<Jest['describe']>[1];
 
-type ItEach = Jest['it']['each'];
-
 interface FormatterParam {
   level: number;
   currentItIndex: number;
@@ -37,6 +35,51 @@ interface IndexedOptions {
    */
   testNameFormatter?: (data: FormatterParam) => string;
 }
+
+const chars = [
+  'a',
+  'b',
+  'c',
+  'd',
+  'e',
+  'f',
+  'g',
+  'h',
+  'i',
+  'j',
+  'k',
+  'l',
+  'm',
+  'n',
+  'o',
+  'p',
+  'q',
+  'r',
+  's',
+  't',
+  'u',
+  'v',
+  'w',
+  'x',
+  'y',
+  'z',
+] as const;
+const base = chars.length;
+type Char = (typeof chars)[number];
+const orderedVarNames = (n: number): string => {
+  if (n <= 0 || !Number.isSafeInteger(n)) {
+    throw new RangeError(`n should be a positive integer. Got ${n}`);
+  }
+  const c2n = new Map<Char, number>(chars.map((c, i) => [c, i]));
+
+  const result: Char[] = ['a'];
+
+  for (let i = 1; i < n; i++) {
+    const prev = result[i - 1];
+  }
+
+  return '';
+};
 
 /**
  * Usage
@@ -168,20 +211,25 @@ export const injectAsIndexedJest = (options?: IndexedOptions) => {
       // 注册的时候名字就已经确定好了
       // 需要在注册的时候就搞定所有名字的index，把curindex也加好
       const newEached = (name: string, fn: Function, timeout?: number) => {
-        let newFn: any;
-        if (fn.length === 1) {
-          newFn = (arg: any) => {
-            currentItIndex++;
-            totalIndex++;
-            return fn(arg);
-          };
-        } else {
-          newFn = (arg: any, done: Function) => {
-            currentItIndex++;
-            totalIndex++;
-            return fn(arg, done);
-          };
-        }
+        // todo 这里，fn的参数的数量可能是任何数值，但不能是...args这样的参数
+        const argNames = new Array(fn.length).map(() => randomString(24));
+        const body = `{console.log("${fn.length}");return (${fn.toString()})(${argNames.join()})}`;
+        const newFn = Reflect.construct(Function, argNames.concat(body)) as any;
+
+        // let newFn: any;
+        // if (fn.length === 1) {
+        //   newFn = (arg: any) => {
+        //     currentItIndex++;
+        //     totalIndex++;
+        //     return fn(arg);
+        //   };
+        // } else {
+        //   newFn = (arg: any, done: Function) => {
+        //     currentItIndex++;
+        //     totalIndex++;
+        //     return fn(arg, done);
+        //   };
+        // }
         return eached(itNameFmt(name), newFn, timeout);
       };
 
